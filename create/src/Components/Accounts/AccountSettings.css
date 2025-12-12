@@ -119,3 +119,21 @@ mark { background: #A8FFD5; color: inherit; padding: .05em .2em; border-radius: 
 @media (max-width: 1000px) {
   .settings-grid { grid-template-columns: 1fr; }
 }
+
+.notification-category {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.notification-category:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.category-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: #333;
+}

@@ -1,220 +1,260 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import "./Register.css";
 import budget_icon from '../Assets/budget_app_figma_logo.png';
-import { useNavigate } from "react-router-dom";
 
-const initialState = {
-  firstName: "",
-  lastName: "",
-  middleInitial: "",
-  dob: "",
-  ssn: "",
-  address: "",
-  phone: "",
-  email: "",
-  pin: "",
-  confirmPin: "",
-  confirmEmail: "",
-  employment: "",
-  companyAddress: "",
-  companyPhone: "",
-  yearsAtCompany: "",
-  yearlySalary: "",
-  accountSelection: "",
-};
+const Register = () => {
+  const [formData, setFormData] = useState({
+    fname: "",
+    lname: "",
+    email: "",
+    phoneNumber: "",
+    password: "",
+    confirmPassword: ""
+  });
 
-export default function Register() {
-  const [fields, setFields] = useState(initialState);
   const [errors, setErrors] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [success, setSuccess] = useState("");
   const navigate = useNavigate();
 
-  // Validation logic
-  const validate = () => {
-    const errs = {};
-    if (!fields.firstName.trim()) errs.firstName = "First name is required.";
-    if (!fields.lastName.trim()) errs.lastName = "Last name is required.";
-    if (!fields.phone.match(/^\d{10}$/)) errs.phone = "Phone must be 10 digits.";
-    if (!fields.email.match(/^[^@\s]+@[^@\s]+\.[^@\s]+$/))
-      errs.email = "Invalid email format.";
-    if (fields.email !== fields.confirmEmail)
-      errs.confirmEmail = "Emails don't match.";
-    if (!fields.pin.match(/^\d{4,}$/)) errs.pin = "PIN must be at least 4 digits.";
-    if (fields.pin !== fields.confirmPin) errs.confirmPin = "PINs don't match!";
-    return errs;
-  };
-
   const handleChange = (e) => {
-    setFields({ ...fields, [e.target.name]: e.target.value });
-  };
-
-  const handleRegister = (e) => {
-    e.preventDefault();
-    const errs = validate();
-    setErrors(errs);
-    if (Object.keys(errs).length === 0) {
-      alert("Registered!");
-      navigate("/"); //login
-      setFields(initialState);
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ""
+      }));
     }
   };
 
+  const validate = () => {
+    const errs = {};
+
+    if (!formData.fname || !formData.fname.trim()) errs.fname = "First name is required.";
+    if (!formData.lname || !formData.lname.trim()) errs.lname = "Last name is required.";
+    if (!formData.email || !formData.email.match(/^[^@\s]+@[^@\s]+\.[^@\s]+$/))
+      errs.email = "Invalid email format.";
+    if (!formData.phoneNumber || !formData.phoneNumber.match(/^\d{10}$/)) 
+      errs.phoneNumber = "Phone must be 10 digits.";
+    if (formData.password && formData.password.length < 4) 
+      errs.password = "Password must be at least 4 characters.";
+    if (formData.password !== formData.confirmPassword) 
+      errs.confirmPassword = "Passwords don't match!";
+    
+    return errs;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrors({});
+    setSuccess("");
+
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        'http://localhost:5000/api/register',
+        {
+          fname: formData.fname,
+          lname: formData.lname,
+          email: formData.email,
+          phoneNumber: formData.phoneNumber,
+          password: formData.password
+        },
+        {
+          withCredentials: true
+        }
+      );
+
+      if (response.data.success) {
+        setSuccess("Registration successful! Redirecting to verification...");
+        
+        localStorage.setItem('unverifiedEmail', formData.email);
+        
+        setTimeout(() => {
+          navigate("/verify", { 
+            state: { 
+              email: formData.email 
+            }
+          });
+        }, 2000);
+      } else {
+        setErrors({ submit: response.data.message });
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      if (error.response) {
+        setErrors({ submit: error.response.data.message || "Registration failed" });
+      } else if (error.request) {
+        setErrors({ submit: "Cannot connect to server. Please try again later."});
+      } else {
+        setErrors({ submit: "An unexpected error occurred." });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+
   return (
     <div className="register-root">
+      {/* Page Header */}
       <div className="register-header">Register Account</div>
+      
       <div className="register-content">
-        <form className="register-form" onSubmit={handleRegister}>
-          <div className="section-title">Customer Details:</div>
+        {/* Registration Form */}
+        <form className="register-form" onSubmit={handleSubmit}>
+          {/* Success message - Bootstrap alert */}
+          {success && (
+            <div className="alert alert-success" role="alert">
+              {success}
+            </div>
+          )}
+          
+          {/* Submit error message - Bootstrap alert */}
+          {errors.submit && (
+            <div className="alert alert-danger" role="alert">
+              {errors.submit}
+            </div>
+          )}
+
+          {/* Personal Information Section */}
+          <div className="section-title">Personal Information:</div>
+          
+          {/* First Name and Last Name Row */}
           <div className="form-row">
+            {/* First Name Input */}
             <div className="input-group">
               <label>First Name<span className="required-star">*</span>:</label>
               <input
-                name="firstName"
+                name="fname"
                 type="text"
-                value={fields.firstName}
+                value={formData.fname}
                 onChange={handleChange}
-                className={errors.firstName && "error-field"}
+                className={errors.fname ? "error-field" : ""}
                 required
               />
-              {errors.firstName && <div className="error-message">{errors.firstName}</div>}
+              {errors.fname && <div className="error-message">{errors.fname}</div>}
             </div>
+            
+            {/* Last Name Input */}
             <div className="input-group">
               <label>Last Name<span className="required-star">*</span>:</label>
               <input
-                name="lastName"
+                name="lname"
                 type="text"
-                value={fields.lastName}
+                value={formData.lname}
                 onChange={handleChange}
-                className={errors.lastName && "error-field"}
+                className={errors.lname ? "error-field" : ""}
                 required
               />
-              {errors.lastName && <div className="error-message">{errors.lastName}</div>}
+              {errors.lname && <div className="error-message">{errors.lname}</div>}
             </div>
           </div>
+
+          {/* Email and Phone Number Row */}
           <div className="form-row">
-            <div className="input-group">
-              <label>Middle Initial:</label>
-              <input name="middleInitial" type="text" value={fields.middleInitial} onChange={handleChange} />
-            </div>
-            <div className="input-group">
-              <label>DOB:</label>
-              <input name="dob" type="date" value={fields.dob} onChange={handleChange} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <label>SSN:</label>
-              <input name="ssn" type="text" value={fields.ssn} onChange={handleChange} />
-            </div>
-            <div className="input-group">
-              <label>Address:</label>
-              <input name="address" type="text" value={fields.address} onChange={handleChange} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <label>Phone<span className="required-star">*</span>:</label>
-              <input
-                name="phone"
-                type="text"
-                value={fields.phone}
-                onChange={handleChange}
-                className={errors.phone && "error-field"}
-                placeholder="10 digits"
-                maxLength={10}
-                required
-              />
-              {errors.phone && <div className="error-message">{errors.phone}</div>}
-            </div>
+            {/* Email Input */}
             <div className="input-group">
               <label>Email Address<span className="required-star">*</span>:</label>
               <input
                 name="email"
                 type="email"
-                value={fields.email}
+                value={formData.email}
                 onChange={handleChange}
-                className={errors.email && "error-field"}
+                className={errors.email ? "error-field" : ""}
                 required
               />
               {errors.email && <div className="error-message">{errors.email}</div>}
             </div>
-          </div>
-          <div className="form-row">
+            
+            {/* Phone Number Input */}
             <div className="input-group">
-              <label>Confirm Email Address<span className="required-star">*</span>:</label>
+              <label>Phone Number<span className="required-star">*</span>:</label>
               <input
-                name="confirmEmail"
-                type="email"
-                value={fields.confirmEmail}
+                name="phoneNumber"
+                type="text"
+                value={formData.phoneNumber}
                 onChange={handleChange}
-                className={errors.confirmEmail && "error-field"}
+                className={errors.phoneNumber ? "error-field" : ""}
+                placeholder="10 digits"
+                maxLength={10}
                 required
               />
-              {errors.confirmEmail && <div className="error-message">{errors.confirmEmail}</div>}
+              {errors.phoneNumber && <div className="error-message">{errors.phoneNumber}</div>}
             </div>
           </div>
-          <div className="section-title">Identity Verification:</div>
+
+          {/* Security Section */}
+          <div className="section-title">Security:</div>
+          
+          {/* Password and Confirm Password Row */}
           <div className="form-row">
+            {/* Password Input */}
             <div className="input-group">
-              <label>Pin<span className="required-star">*</span>:</label>
+              <label>Password<span className="required-star">*</span>:</label>
               <input
-                name="pin"
+                name="password"
                 type="password"
-                value={fields.pin}
+                value={formData.password}
                 onChange={handleChange}
-                className={errors.pin && "error-field"}
-                placeholder="Minimum 4 digits"
-                maxLength={8}
+                className={errors.password ? "error-field" : ""}
+                placeholder="Minimum 4 characters"
                 required
               />
-              {errors.pin && <div className="error-message">{errors.pin}</div>}
+              {errors.password && <div className="error-message">{errors.password}</div>}
             </div>
+            
+            {/* Confirm Password Input */}
             <div className="input-group">
-              <label>Confirm Pin<span className="required-star">*</span>:</label>
+              <label>Confirm Password<span className="required-star">*</span>:</label>
               <input
-                name="confirmPin"
+                name="confirmPassword"
                 type="password"
-                value={fields.confirmPin}
+                value={formData.confirmPassword}
                 onChange={handleChange}
-                className={errors.confirmPin && "error-field"}
-                maxLength={8}
+                className={errors.confirmPassword ? "error-field" : ""}
                 required
               />
-              {errors.confirmPin && <div className="error-message">{errors.confirmPin}</div>}
+              {errors.confirmPassword && <div className="error-message">{errors.confirmPassword}</div>}
             </div>
           </div>
-          <div className="section-title">Financial Profile:</div>
-          <div className="form-row">
-            <div className="input-group">
-              <label>Employment:</label>
-              <input name="employment" type="text" value={fields.employment} onChange={handleChange} />
-            </div>
-            <div className="input-group">
-              <label>Company Address:</label>
-              <input name="companyAddress" type="text" value={fields.companyAddress} onChange={handleChange} />
-            </div>
+
+          {/* Submit Button - Bootstrap button */}
+          <button 
+            type="submit" 
+            className="register-submit-btn"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Registering...' : 'Register'}
+          </button>
+          
+          {/* Link to Login Page - Bootstrap button */}
+          <div className="text-center mt-3">
+            <button 
+              type="button" 
+              className="btn btn-link"
+              onClick={() => navigate("/")}
+            >
+              Already have an account? Login here
+            </button>
           </div>
-          <div className="form-row">
-            <div className="input-group">
-              <label>Company Telephone:</label>
-              <input name="companyPhone" type="text" value={fields.companyPhone} onChange={handleChange} />
-            </div>
-            <div className="input-group">
-              <label>Years At Company:</label>
-              <input name="yearsAtCompany" type="number" value={fields.yearsAtCompany} onChange={handleChange} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="input-group">
-              <label>Yearly Salary:</label>
-              <input name="yearlySalary" type="number" value={fields.yearlySalary} onChange={handleChange} />
-            </div>
-            <div className="input-group">
-              <label>Account Selection:</label>
-              <input name="accountSelection" type="text" value={fields.accountSelection} onChange={handleChange} />
-            </div>
-          </div>
-          <button type="submit" className="register-submit-btn">Register</button>
         </form>
+        
+        {/* Logo and Branding Section */}
         <div className="register-logo-container">
           <img src={budget_icon} alt="Budget App Logo" className="register-logo"/>
           <div className="register-logo-text">
@@ -224,4 +264,6 @@ export default function Register() {
       </div>
     </div>
   );
-}
+};
+
+export default Register;

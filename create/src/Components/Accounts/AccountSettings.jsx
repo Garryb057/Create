@@ -1,31 +1,140 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useContext } from "react";
+import { AuthContext } from "../../App"
+import axiosInstance from "../../axiosConfig"
 import "./AccountSettings.css";
 import budgetLogo from "../Assets/budget_app_figma_logo.png"; 
 
 function AccountSettings() {
+  const { user } = useContext(AuthContext);
+
   // toggles
-  const [emailNotifs, setEmailNotifs] = useState(true);
-  const [smsNotifs, setSmsNotifs] = useState(false);
-  const [pushNotifs, setPushNotifs] = useState(true);
-  const [twoFactor, setTwoFactor] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState({
+    security_alerts: { push: true, email: true, sms: true },
+    transaction_alerts: { push: true, email: true, sms: false },
+    marketing: { push: false, email: true, sms: false },
+    statements: { push: false, email: true, sms: false }
+  });
 
   // changeable text values
   const [legalName, setLegalName] = useState("");
-  const [preferredName, setPreferredName] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
-  const [mailingAddress, setMailingAddress] = useState("");
+  const [twoFactor, setTwoFactor] = useState(false);
 
-  const handleSubmit = (e) => {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: ''});
+
+  useEffect(() => {
+    fetchAccountSettings();
+  }, [])
+
+  useEffect(() => {
+    if (user) {
+      const fullName = `${user.fname || ''} ${user.lname || ''}`.trim();
+      setLegalName(fullName);
+      setAccountEmail(user.email || '');
+      setPhone(user.phoneNumber || '');
+    }
+  }, [user]);
+
+  const fetchAccountSettings = async () => {
+    try {
+      setLoading(true);
+      const profileResponse = await axiosInstance.get('/account-settings');
+      const notificationResponse = await axiosInstance.get('/notification-settings');
+
+      if (profileResponse.data.success) {
+        const userData = profileResponse.data.user;
+        const fullName = `${userData.fname || ''} ${userData.lname || ''}`.trim();
+
+        setLegalName(fullName);
+        setAccountEmail(userData.email || '');
+        setPhone(userData.phoneNumber || '');
+
+        if (profileResponse.data.notificationSettings) {
+          setTwoFactor(profileResponse.data.notificationSettings.twoFactor || false);
+        }
+      }
+      if (notificationResponse.data.success) {
+        setNotificationSettings(notificationResponse.data.settings);
+      }
+    } catch (error) {
+      console.error('Error fetching account settings:', error);
+      setMessage({
+        type: 'error',
+        text: 'Failed to load account settings'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNotificationChange = (category, channel, enabled) => {
+    setNotificationSettings(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [channel]: enabled
+      }
+    }));
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const payload = {
-      legalName, preferredName, phone, address,
-      accountEmail, mailingAddress,
-      emailNotifs, smsNotifs, pushNotifs, twoFactor,
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      const profilePayload = {
+        legalName,
+        phone,
+        accountEmail,
+        twoFactor,
+      };
+
+      const profileResponse = await axiosInstance.put('/account-settings', profilePayload);
+
+      const notificationPayload = {
+        category_updates: notificationSettings
+      };
+
+      const notificationResponse = await axiosInstance.put('/notification-settings', notificationPayload);
+
+      if (profileResponse.data.success && notificationResponse.data.success) {
+        setMessage({
+          type: 'success',
+          text: 'Account settings updated successfully!'
+        });
+
+        setTimeout(() => {
+          setMessage({ type: '', text: ''});
+        }, 3000);
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'Failed to update settings'
+        });
+      }
+    } catch (error) {
+      console.error('Error updating account settings:', error);
+      const errorMessage = error.response?.data?.message || "Failed to update account settings";
+      setMessage({
+        type: 'error',
+        text: errorMessage
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCategoryDisplayName = (category) => {
+    const names = {
+      security_alerts: 'Security Alerts',
+      transaction_alerts: 'Transactions Alerts',
+      marketing: 'Marketing',
+      statements: 'Statements'
     };
-    console.log("Save settings:", payload);
-    alert("Settings saved (demo).");
+    return names[category] || category;
   };
 
   return (
@@ -36,6 +145,20 @@ function AccountSettings() {
           <h1><mark>Account Settings</mark></h1>
         </header>
         <div className="highlight" />
+
+        {message.text && (
+          <div className={`alert alert-${message.type === 'success' ? 'success' : 'danger'} mb-4`}>
+            {message.text}
+          </div>
+        )}
+
+        {loading && (
+          <div className="text-center mb-4">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+          </div>
+        )}
 
         <form className="settings-grid" onSubmit={handleSubmit}>
           {/* Personal Information Section */}
@@ -49,59 +172,53 @@ function AccountSettings() {
               placeholder="First Last"
             />
             <EditableLineWithChip
-              label="Preferred Name"
-              value={preferredName}
-              onChange={setPreferredName}
-              placeholder="What should we call you?"
-            />
-            <EditableLineWithChip
               label="Phone Number"
               value={phone}
               onChange={setPhone}
               placeholder="(555) 555-5555"
-            />
-            <EditableLineWithChip
-              label="Address"
-              value={address}
-              onChange={setAddress}
-              placeholder="Street, City, State, ZIP"
-              multiline
             />
           </section>
 
           {/* Notification Section */}
           <section className="panel panel-green">
             <h2 className="panel-title">Notification Preferences</h2>
+            
+            {Object.entries(notificationSettings).map(([category, channels]) => (
+              <div key={category} className="notification-category">
+                <h4 className="category-title">{getCategoryDisplayName(category)}</h4>
+                
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={channels.push}
+                    onChange={(e) => handleNotificationChange(category, 'push', e.target.checked)}
+                    disabled={category === 'security_alerts' && channels.push} // Security alerts push is immutable
+                  />
+                  <span className="switch" />
+                  <span className="toggle-text">Push notifications</span>
+                </label>
 
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={emailNotifs}
-                onChange={(e) => setEmailNotifs(e.target.checked)}
-              />
-              <span className="switch" />
-              <span className="toggle-text">Email notifications</span>
-            </label>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={channels.email}
+                    onChange={(e) => handleNotificationChange(category, 'email', e.target.checked)}
+                  />
+                  <span className="switch" />
+                  <span className="toggle-text">Email notifications</span>
+                </label>
 
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={smsNotifs}
-                onChange={(e) => setSmsNotifs(e.target.checked)}
-              />
-              <span className="switch" />
-              <span className="toggle-text">SMS notifications</span>
-            </label>
-
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={pushNotifs}
-                onChange={(e) => setPushNotifs(e.target.checked)}
-              />
-              <span className="switch" />
-              <span className="toggle-text">Push notifications</span>
-            </label>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={channels.sms}
+                    onChange={(e) => handleNotificationChange(category, 'sms', e.target.checked)}
+                  />
+                  <span className="switch" />
+                  <span className="toggle-text">SMS notifications</span>
+                </label>
+              </div>
+            ))}
           </section>
 
           {/* Password & Security Section*/}
@@ -113,13 +230,6 @@ function AccountSettings() {
               value={accountEmail}
               onChange={setAccountEmail}
               placeholder="you@example.com"
-            />
-            <EditableLineWithChip
-              label="Mailing Address"
-              value={mailingAddress}
-              onChange={setMailingAddress}
-              placeholder="Street, City, State, ZIP"
-              multiline
             />
           </section>
 
@@ -143,7 +253,9 @@ function AccountSettings() {
             <button className="btn btn-ghost" type="button" onClick={() => window.history.back()}>
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit">Save Changes</button>
+            <button className="btn btn-primary" type="submit" disabled={loading}>
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
         </form>
       </div>

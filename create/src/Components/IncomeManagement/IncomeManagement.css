@@ -16,9 +16,9 @@
   background: #fff;
   border: none;
   box-shadow: 0 3px 16px rgba(60, 175, 122, 0.13);
-  margin-bottom: auto;
-  margin-top: -30px !important;
-  margin-left: 100px !important;
+  margin-bottom: 0 !important;
+  margin-left: 0 !important;
+  margin-top: 0 !important;
 }
 
 .income-pie-chart-img {
@@ -72,4 +72,8 @@
   border-radius: 10px !important;
   min-width: 200px;
   margin-bottom: -20px !important;
+}
+
+.inactive-income {
+  opacity: 0.6;
 }

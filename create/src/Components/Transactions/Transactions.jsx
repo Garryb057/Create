@@ -1,48 +1,229 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { AuthContext } from '../../App';
+import axiosInstance from '../../axiosConfig';
 import './Transactions.css';
 
 export default function Transactions() {
-  const [transactions, setTransactions] = useState([
-    { id: 1, date: '2025-10-01', payee: 'Amazon', category: 'Shopping', amount: 5.0, notes: '' },
-    { id: 2, date: '2025-10-02', payee: 'Starbucks', category: 'Food & Dining', amount: 12.5, notes: '' },
-    { id: 3, date: '2025-10-03', payee: 'Walmart', category: 'Groceries', amount: 35.0, notes: '' },
-    { id: 4, date: '2025-10-04', payee: 'Uber', category: 'Transportation', amount: 18.0, notes: '' },
-    { id: 5, date: '2025-10-05', payee: 'Amazon', category: 'Shopping', amount: 9.99, notes: '' },
-    { id: 6, date: '2025-10-06', payee: 'Target', category: 'Shopping', amount: 27.5, notes: '' },
-    { id: 7, date: '2025-10-07', payee: 'Netflix', category: 'Entertainment', amount: 15.49, notes: 'Monthly subscription' },
-    { id: 8, date: '2025-10-08', payee: 'Domino\'s', category: 'Food & Dining', amount: 20.0, notes: '' },
-    { id: 9, date: '2025-10-09', payee: 'Apple', category: 'Entertainment', amount: 2.99, notes: 'iCloud storage' },
-    { id: 10, date: '2025-10-10', payee: 'Shell Gas', category: 'Transportation', amount: 45.0, notes: '' },
-    { id: 11, date: '2025-10-11', payee: 'Whole Foods', category: 'Groceries', amount: 67.32, notes: '' },
-    { id: 12, date: '2025-10-12', payee: 'Chipotle', category: 'Food & Dining', amount: 14.25, notes: '' },
-  ]);
+  const { user } = useContext(AuthContext);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [sortBy, setSortBy] = useState('date-desc');
   const [filterCategory, setFilterCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [budgets, setBudgets] = useState([]);
+  const [selectedBudgetId, setSelectedBudgetId] = useState(null);
+  const [budgetCategories, setBudgetCategories] = useState([]);
 
   // Form state
   const [formData, setFormData] = useState({
     date: '',
     payee: '',
-    category: '',
+    categoryID: '',
     amount: '',
     notes: '',
     file: null
   });
 
-  const categories = [
-    'All Categories',
-    'Groceries',
-    'Food & Dining',
-    'Shopping',
-    'Transportation',
-    'Entertainment',
-    'Utilities',
-    'Healthcare',
-    'Other'
-  ];
+  useEffect(() => {
+    fetchTransactions();
+    fetchCategories();
+    fetchBudgets();
+  }, [sortBy, filterCategory]);
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams({
+        sort: sortBy,
+        category: filterCategory,
+        limit: 100
+      });
+
+      const response = await axiosInstance.get(`/transactions/all?${params}`);
+      console.log('Transactions data:', response.data);
+      setTransactions(response.data);
+    } catch (err) {
+      console.error('Error fetching transactions:', err);
+      setError('Failed to load transactions. Please try again.');
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await axiosInstance.get('/categories/all');
+      // Store category names for filtering dropdown
+      const categoryNames = response.data.categories || [];
+      setCategories(categoryNames);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      setCategories([]);
+    }
+  };
+
+  const fetchBudgets = async () => {
+    try {
+      const response = await axiosInstance.get('/budgets');
+      setBudgets(response.data);
+      if (response.data.length > 0) {
+        setSelectedBudgetId(response.data[0].budgetID);
+        fetchCategoriesForBudget(response.data[0].budgetID);
+      }
+    } catch (err) {
+      console.error('Error fetching budgets:', err);
+      setBudgets([]);
+    }
+  };
+
+  const fetchCategoriesForBudget = async (budgetID) => {
+    try {
+      const response = await axiosInstance.get(`/categories?budgetId=${budgetID}`);
+      const categories = response.data.categories || response.data || [];
+      setBudgetCategories(categories);
+
+      if (categories && categories.length > 0) {
+        const firstCatID = categories[0].idbankCategory;
+        if (firstCatID) {
+          setFormData(prev => ({
+            ...prev,
+            categoryID: firstCatID.toString()
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching categories for budget:', err);
+      setBudgetCategories([]);
+    }
+  };
+
+  const handleAddTransaction = async (e) => {
+    e.preventDefault();
+    try {
+      if (!formData.payee || !formData.amount || !formData.date || !formData.categoryID) {
+        setError('Please fill in all required fields (payee, amount, date, category)');
+        return;
+      }
+
+      if (!selectedBudgetId) {
+        setError('Please select a budget first');
+        return;
+      }
+
+      const transactionData = {
+        payee: formData.payee,
+        amount: parseFloat(formData.amount),
+        date: formData.date,
+        notes: formData.notes,
+        categoryID: parseInt(formData.categoryID),
+        budgetID: selectedBudgetId
+      };
+
+      if (transactionData.amount <= 0) {
+        setError('Amount must be greater than 0');
+        return;
+      }
+
+      const response = await axiosInstance.post('/transactions', transactionData);
+
+      if (response.status === 200) {
+        resetForm();
+        setShowAddModal(false);
+        setError(null);
+        fetchTransactions();
+      } else {
+        throw new Error(response.data.error || 'Failed to add transaction');
+      }
+    } catch (err) {
+      console.error('Error adding transaction:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to add transaction. Please try again.';
+      setError(errorMessage);
+    }
+  };
+
+  const handleEditTransaction = (transaction) => {
+    setEditingTransaction(transaction);
+    setFormData({
+      date: transaction.date.split('T')[0],
+      payee: transaction.payee,
+      categoryID: transaction.categoryID.toString(),
+      amount: transaction.amount.toString(),
+      notes: transaction.notes || '',
+      file: null
+    });
+    setShowAddModal(true);
+  };
+
+  const handleUpdateTransaction = async (e) => {
+    e.preventDefault();
+    try {
+      if (!formData.payee || !formData.amount || !formData.date || !formData.categoryID) {
+        setError('Please fill in all required fields');
+        return;
+      }
+
+      const transactionData = {
+        payee: formData.payee,
+        amount: parseFloat(formData.amount),
+        date: formData.date,
+        notes: formData.notes,
+        categoryID: parseInt(formData.categoryID)
+      };
+
+      console.log('Updating transaction with data:', transactionData);
+
+      const response = await axiosInstance.put(`/transactions/${editingTransaction.id}`, transactionData);
+
+      if (response.status === 200) {
+        resetForm();
+        setShowAddModal(false);
+        setEditingTransaction(null);
+        setError(null);
+        fetchTransactions();
+      } else {
+        throw new Error(response.data.error || 'Failed to update transaction');
+      }
+    } catch (err) {
+      console.error('Error updating transaction:', err);
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to update transaction. Please try again.';
+      setError(errorMessage);
+    }
+  };
+
+  const handleDeleteTransaction = async (id) => {
+    if (window.confirm('Are you sure you want to delete this transaction?')) {
+      try {
+        const response = await axiosInstance.delete(`/transactions/${id}`);
+        if (response.status === 200) {
+          fetchTransactions();
+        } else {
+          throw new Error('Failed to delete transaction');
+        }
+      } catch (err) {
+        console.error('Error deleting transaction:', err);
+        const errorMessage = err.response?.data?.error || err.message || 'Failed to delete transaction. Please try again.';
+        setError(errorMessage);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      date: '',
+      payee: '',
+      categoryID: '',
+      amount: '',
+      notes: '',
+      file: null
+    });
+  };
 
   // Sort transactions
   const sortedTransactions = [...transactions].sort((a, b) => {
@@ -69,70 +250,6 @@ export default function Transactions() {
     ? sortedTransactions 
     : sortedTransactions.filter(t => t.category === filterCategory);
 
-  const handleAddTransaction = (e) => {
-    e.preventDefault();
-    const newTransaction = {
-      id: transactions.length + 1,
-      date: formData.date,
-      payee: formData.payee,
-      category: formData.category,
-      amount: parseFloat(formData.amount),
-      notes: formData.notes
-    };
-    setTransactions([...transactions, newTransaction]);
-    resetForm();
-    setShowAddModal(false);
-  };
-
-  const handleEditTransaction = (transaction) => {
-    setEditingTransaction(transaction);
-    setFormData({
-      date: transaction.date,
-      payee: transaction.payee,
-      category: transaction.category,
-      amount: transaction.amount.toString(),
-      notes: transaction.notes || '',
-      file: null
-    });
-    setShowAddModal(true);
-  };
-
-  const handleUpdateTransaction = (e) => {
-    e.preventDefault();
-    setTransactions(transactions.map(t => 
-      t.id === editingTransaction.id 
-        ? {
-            ...t,
-            date: formData.date,
-            payee: formData.payee,
-            category: formData.category,
-            amount: parseFloat(formData.amount),
-            notes: formData.notes
-          }
-        : t
-    ));
-    resetForm();
-    setShowAddModal(false);
-    setEditingTransaction(null);
-  };
-
-  const handleDeleteTransaction = (id) => {
-    if (window.confirm('Are you sure you want to delete this transaction?')) {
-      setTransactions(transactions.filter(t => t.id !== id));
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      date: '',
-      payee: '',
-      category: '',
-      amount: '',
-      notes: '',
-      file: null
-    });
-  };
-
   const totalAmount = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
 
   return (
@@ -150,6 +267,18 @@ export default function Transactions() {
           + Add Transaction
         </button>
       </div>
+
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+          <button 
+            type="button" 
+            className="btn-close" 
+            onClick={() => setError(null)}
+            style={{ float: 'right' }}
+          />
+        </div>
+      )}
 
       <div className="transactions-controls">
         <div className="control-group">
@@ -176,8 +305,8 @@ export default function Transactions() {
             onChange={(e) => setFilterCategory(e.target.value)}
           >
             <option value="all">All Categories</option>
-            {categories.slice(1).map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
+            {categories.map((cat, idx) => (
+              <option key={idx} value={cat}>{cat}</option>
             ))}
           </select>
         </div>
@@ -189,47 +318,51 @@ export default function Transactions() {
       </div>
 
       <div className="transactions-table-container">
-        <table className="transactions-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Payee</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((transaction) => (
-              <tr key={transaction.id}>
-                <td>{transaction.date}</td>
-                <td>{transaction.payee}</td>
-                <td>
-                  <span className={`category-badge category-${transaction.category.toLowerCase().replace(/\s/g, '-')}`}>
-                    {transaction.category}
-                  </span>
-                </td>
-                <td className="amount-cell">${transaction.amount.toFixed(2)}</td>
-                <td className="notes-cell">{transaction.notes || '—'}</td>
-                <td className="actions-cell">
-                  <button 
-                    className="btn-edit"
-                    onClick={() => handleEditTransaction(transaction)}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="btn-delete"
-                    onClick={() => handleDeleteTransaction(transaction.id)}
-                  >
-                    Delete
-                  </button>
-                </td>
+        {loading ? (
+          <div>Loading transactions...</div>
+        ) : (
+          <table className="transactions-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Payee</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Notes</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredTransactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td>{new Date(transaction.date).toLocaleDateString()}</td>
+                  <td>{transaction.payee}</td>
+                  <td>
+                    <span className={`category-badge category-${transaction.category.toLowerCase().replace(/\s/g, '-')}`}>
+                      {transaction.category}
+                    </span>
+                  </td>
+                  <td className="amount-cell">${transaction.amount.toFixed(2)}</td>
+                  <td className="notes-cell">{transaction.notes || '—'}</td>
+                  <td className="actions-cell">
+                    <button 
+                      className="btn-edit"
+                      onClick={() => handleEditTransaction(transaction)}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="btn-delete"
+                      onClick={() => handleDeleteTransaction(transaction.id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Add/Edit Transaction Modal */}
@@ -244,6 +377,7 @@ export default function Transactions() {
                   setShowAddModal(false);
                   setEditingTransaction(null);
                   resetForm();
+                  setError(null);
                 }}
               >
                 ×
@@ -275,13 +409,15 @@ export default function Transactions() {
                 <label className="form-label">Category *</label>
                 <select 
                   className="form-control"
-                  value={formData.category}
-                  onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  value={formData.categoryID}
+                  onChange={(e) => setFormData({...formData, categoryID: e.target.value})}
                   required
                 >
                   <option value="">Select category...</option>
-                  {categories.slice(1).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {budgetCategories.map(cat => (
+                    <option key={cat.idbankCategory} value={cat.idbankCategory}>
+                      {cat.name}
+                    </option>
                   ))}
                 </select>
               </div>

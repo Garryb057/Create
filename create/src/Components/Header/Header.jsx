@@ -1,11 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../../App";
+import axiosInstance from "../../axiosConfig";
 import "./Header.css";
 import budgetLogo from "../Assets/budget_app_figma_logo.png";
 
 export default function Header() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { logout } = useContext(AuthContext);
 
   const toggleMenu = () => setOpen((prev) => !prev);
 
@@ -14,15 +17,30 @@ export default function Header() {
     setOpen(false);
   };
 
-  const handleLogout = () => {
-    // goes back to login page
-    navigate("/create");
-    setOpen(false);
+  const handleLogout = async() => {
+    try {
+      const response = await axiosInstance.post('/logout');
+
+      if (response.data.success) {
+        logout();
+        navigate("/");
+      } else {
+        console.error('Logout failed:', response.data.message);
+        logout();
+        navigate("/");
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      logout();
+      navigate("/");
+    } finally {
+      setOpen(false);
+    }
   };
 
   return (
     <header className="app-header">
-      {/* logo and text */}
+      {/* LEFT: logo + text (kept) */}
       <div className="header-left" onClick={() => goTo("/dashboard")}>
         <img
           src={budgetLogo}
@@ -34,7 +52,7 @@ export default function Header() {
         </span>
       </div>
 
-      {/*  dropdown menu */}
+      {/* RIGHT: clickable dropdown menu */}
       <div className="header-right">
         <button
           type="button"
@@ -74,8 +92,15 @@ export default function Header() {
             >
               Account
             </button>
+            <button
+              type="button"
+              className="dropdown-item"
+              onClick={() => goTo("/profile")}
+            >
+              Profile
+            </button>
 
-            {/* log out*/}
+            {/* ✅ LOG OUT HERE – NO REGISTER */}
             <button
               type="button"
               className="dropdown-item logout-item"
